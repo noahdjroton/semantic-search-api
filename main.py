@@ -7,34 +7,35 @@ import numpy as np
 from typing import Optional, List, Dict
 import logging
 
-# Configuration du logging
+# Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Semantic Search API", version="2.0.0", description="API de recherche sémantique améliorée")
+app = FastAPI(title="Semantic Search API", version="2.0.0", description="Enhanced semantic search API")
 
 # CORS configuration to allow requests from frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Constantes pour les seuils
+# Constants for thresholds
 SIMILARITY_THRESHOLD = 0.5
 MAX_RESULTS = 10
 MIN_SIMILARITY_FOR_DISPLAY = 0.15
 
 # Load AI model
-logger.info("Chargement du modèle de sentence transformers...")
-model = SentenceTransformer('all-MiniLM-L6-v2')
-logger.info("Modèle chargé avec succès!")
+logger.info("Loading sentence transformers model...")
+# all-MiniLM-L6-v2 / 
+model = SentenceTransformer('all-mpnet-base-v2')
+logger.info("Model loaded successfully!")
 
 # Sample products dataset
 products = [
-    # Vêtements femme
+    # Women's clothing
     "Robe d'été légère en coton blanc",
     "Robe de soirée élégante noire",
     "Robe midi fleurie printemps",
@@ -46,7 +47,7 @@ products = [
     "Blouse en soie crème",
     "Chemisier rayé bleu blanc",
     
-    # Vêtements homme
+    # Men's clothing
     "Chemise blanche classique coton",
     "Polo sport respirant marine",
     "T-shirt basic en coton bio noir",
@@ -58,7 +59,7 @@ products = [
     "Jeans slim stretch confortable",
     "Short cargo kaki",
     
-    # Chaussures
+    # Shoes
     "Baskets running respirantes blanches",
     "Sneakers lifestyle urbaines",
     "Chaussures de ville cuir noir",
@@ -70,7 +71,7 @@ products = [
     "Mocassins confort cuir",
     "Chaussures sport fitness",
     
-    # Accessoires
+    # Accessories
     "Écharpe en cachemire douce",
     "Bonnet laine tricot",
     "Casquette baseball ajustable",
@@ -82,7 +83,7 @@ products = [
     "Lunettes de soleil polarisées",
     "Bijoux fantaisie dorés",
     
-    # Vêtements sport
+    # Sportswear
     "Short de bain coloré",
     "Maillot de bain une pièce",
     "Legging sport compression",
@@ -92,7 +93,7 @@ products = [
     "Débardeur fitness respirant",
     "Chaussettes sport techniques",
     
-    # Vêtements enfant
+    # Children's clothing
     "T-shirt enfant motif animal",
     "Robe petite fille princesse",
     "Pantalon enfant résistant",
@@ -100,28 +101,28 @@ products = [
     "Manteau enfant chaud",
     "Chaussures enfant premiers pas",
     
-    # Sous-vêtements et lingerie
+    # Underwear and lingerie
     "Soutien-gorge confort dentelle",
     "Culotte coton bio",
     "Boxer homme coton",
     "Chaussettes coton respirantes",
     "Collants fins transparents",
     
-    # Vêtements d'extérieur
+    # Outerwear
     "Manteau d'hiver long",
     "Parka imperméable capuche",
     "Doudoune légère compactable",
     "Trench-coat classique beige",
     "Imperméable pluie jaune",
     
-    # Vêtements de nuit
+    # Sleepwear
     "Pyjama satin luxueux",
     "Chemise de nuit coton",
     "Peignoir éponge doux",
     "Chaussons maison confort"
 ]
 
-# Catégories pour une meilleure organisation
+# Categories for better organization
 product_categories = {
     "vêtements_femme": products[0:10],
     "vêtements_homme": products[10:20],
@@ -135,15 +136,15 @@ product_categories = {
 }
 
 # Pre-compute embeddings to optimize performance
-logger.info("Calcul des embeddings des produits...")
+logger.info("Computing product embeddings...")
 product_embeddings = model.encode(products)
-logger.info(f"Embeddings calculés avec succès pour {len(products)} produits!")
+logger.info(f"Embeddings computed successfully for {len(products)} products!")
 
 class SearchQuery(BaseModel):
-    query: str = Field(..., description="Requête de recherche", min_length=1)
-    threshold: Optional[float] = Field(SIMILARITY_THRESHOLD, description="Seuil de similarité minimum", ge=0.0, le=1.0)
-    max_results: Optional[int] = Field(MAX_RESULTS, description="Nombre maximum de résultats", ge=1, le=50)
-    category_filter: Optional[str] = Field(None, description="Filtrer par catégorie")
+    query: str = Field(..., description="Search query", min_length=1)
+    threshold: Optional[float] = Field(SIMILARITY_THRESHOLD, description="Minimum similarity threshold", ge=0.0, le=1.0)
+    max_results: Optional[int] = Field(MAX_RESULTS, description="Maximum number of results", ge=1, le=50)
+    category_filter: Optional[str] = Field(None, description="Filter by category")
 
 class ProductResponse(BaseModel):
     product: str
@@ -160,7 +161,7 @@ class SearchResponse(BaseModel):
     categories_found: List[str]
 
 def get_relevance_label(score: float) -> str:
-    """Convertit le score en label de pertinence"""
+    """Converts score to relevance label"""
     if score >= 0.7:
         return "Très pertinent"
     elif score >= 0.5:
@@ -173,7 +174,7 @@ def get_relevance_label(score: float) -> str:
         return "Peu pertinent"
 
 def get_product_category(product: str) -> Optional[str]:
-    """Trouve la catégorie d'un produit"""
+    """Finds the category of a product"""
     for category, products_in_category in product_categories.items():
         if product in products_in_category:
             return category
@@ -192,21 +193,21 @@ async def root():
 @app.post("/search", response_model=SearchResponse)
 async def semantic_search(search_query: SearchQuery):
     """
-    Recherche sémantique améliorée avec filtrage par seuil et catégorie
+    Enhanced semantic search with threshold and category filtering
     """
     try:
-        # Validation de la requête
+        # Query validation
         if not search_query.query.strip():
             raise HTTPException(status_code=400, detail="La requête ne peut pas être vide")
         
         logger.info(f"Recherche pour: '{search_query.query}' avec seuil {search_query.threshold}")
         
-        # Filtrage par catégorie si spécifié
+        # Category filtering if specified
         search_products = products
         if search_query.category_filter:
             if search_query.category_filter in product_categories:
                 search_products = product_categories[search_query.category_filter]
-                # Recalculer les embeddings pour la catégorie filtrée
+                # Recalculate embeddings for filtered category
                 search_embeddings = model.encode(search_products)
             else:
                 raise HTTPException(status_code=400, detail=f"Catégorie '{search_query.category_filter}' non trouvée")
@@ -239,7 +240,7 @@ async def semantic_search(search_query: SearchQuery):
         # Sort by descending score
         results = sorted(results, key=lambda x: x.score, reverse=True)
         
-        # Limiter les résultats
+        # Limit results
         results = results[:search_query.max_results]
         
         response = SearchResponse(
@@ -263,7 +264,7 @@ async def semantic_search(search_query: SearchQuery):
 @app.post("/analyze-similarity")
 async def analyze_similarity(search_query: SearchQuery):
     """
-    Endpoint pour analyser la distribution des scores de similarité
+    Endpoint to analyze similarity score distribution
     """
     try:
         if not search_query.query.strip():
@@ -272,7 +273,7 @@ async def analyze_similarity(search_query: SearchQuery):
         query_embedding = model.encode([search_query.query])
         similarities = cosine_similarity(query_embedding, product_embeddings)[0]
         
-        # Statistiques des scores
+        # Score statistics
         stats = {
             "query": search_query.query,
             "statistics": {
@@ -293,7 +294,7 @@ async def analyze_similarity(search_query: SearchQuery):
                 {"product": product, "score": float(score), "relevance": get_relevance_label(score)}
                 for product, score in sorted(zip(products, similarities), key=lambda x: x[1], reverse=True)[:10]
             ],
-            "recommended_threshold": float(np.percentile(similarities, 70))  # 70e percentile
+            "recommended_threshold": float(np.percentile(similarities, 70))  # 70th percentile
         }
         
         return stats
@@ -306,7 +307,7 @@ async def analyze_similarity(search_query: SearchQuery):
 
 @app.get("/products")
 async def get_all_products():
-    """Endpoint pour récupérer tous les produits avec leurs catégories"""
+    """Endpoint to retrieve all products with their categories"""
     return {
         "total_products": len(products),
         "products": products,
@@ -319,7 +320,7 @@ async def get_all_products():
 
 @app.get("/categories")
 async def get_categories():
-    """Endpoint pour récupérer toutes les catégories disponibles"""
+    """Endpoint to retrieve all available categories"""
     return {
         "categories": list(product_categories.keys()),
         "category_details": {
@@ -334,7 +335,7 @@ async def get_categories():
 
 @app.get("/health")
 async def health_check():
-    """Endpoint de vérification de santé de l'API"""
+    """API health check endpoint"""
     return {
         "status": "healthy",
         "model_loaded": model is not None,
